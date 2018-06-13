@@ -55,7 +55,7 @@ contract Orders {
 	      });
 			} else {
 				// 超过两天不可以修改
-				Order({uin:123456, name:'hhh',time:1532453});
+				orders[_uin] = Order({uin:123456, name:'hhh',time:1532453});
 			}
 		}
 
