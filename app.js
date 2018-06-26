@@ -1,10 +1,202 @@
 const express = require('express');
 const Web3 = require('web3');
-const fs = require('fs');
 const contract = require('truffle-contract');
-const SimpleStorageContract = require('../build/contracts/simpleStorage.json');
+const urlModule = require('url');
+const Tx = require('ethereumjs-tx');
+const config = require('./config.js');
 
-// 创建express实例
+if (typeof web3 !== 'undefined') {
+  console.log('instance already exists');
+  web3 = new Web3(web3.currentProvider);
+} else {
+  console.log('new instance');
+    // 连接 infura 的远程节点，这里设置的是 rinkbey 测试网络
+  web3 = new Web3(new Web3.providers.HttpProvider("https://rinkeby.infura.io/" + config.key));
+}
+
+// 智能合约的 ABI
+const ContractABI =  [
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "Orderlist",
+    "outputs": [
+      {
+        "name": "uin",
+        "type": "uint48"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "ctime",
+        "type": "uint48"
+      },
+      {
+        "name": "phone",
+        "type": "uint48"
+      },
+      {
+        "name": "price",
+        "type": "uint48"
+      },
+      {
+        "name": "lease_time",
+        "type": "uint48"
+      },
+      {
+        "name": "sign",
+        "type": "string"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "isOwner",
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "getAddress",
+    "outputs": [
+      {
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "order_id",
+        "type": "uint48"
+      },
+      {
+        "name": "user_name",
+        "type": "string"
+      },
+      {
+        "name": "ctime",
+        "type": "uint48"
+      },
+      {
+        "name": "phone",
+        "type": "uint48"
+      },
+      {
+        "name": "price",
+        "type": "uint48"
+      },
+      {
+        "name": "lease_time",
+        "type": "uint48"
+      },
+      {
+        "name": "sign",
+        "type": "string"
+      }
+    ],
+    "name": "writeOrder",
+    "outputs": [
+      {
+        "name": "rusult",
+        "type": "string"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "order_id",
+        "type": "uint48"
+      }
+    ],
+    "name": "getIndex",
+    "outputs": [
+      {
+        "name": "index",
+        "type": "uint48"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "order_id",
+        "type": "uint48"
+      }
+    ],
+    "name": "readOrder",
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint48"
+      },
+      {
+        "name": "",
+        "type": "string"
+      },
+      {
+        "name": "",
+        "type": "uint48"
+      },
+      {
+        "name": "",
+        "type": "uint48"
+      },
+      {
+        "name": "",
+        "type": "uint48"
+      },
+      {
+        "name": "",
+        "type": "uint48"
+      },
+      {
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
+
+// 连接到智能合约，生成合约实例
+var ContractInstance =  web3.eth.contract(ContractABI).at(config.ContractAddress);
+
 const app = express();
 // 设置跨域访问
 app.all('*', function(req, res, next) {
@@ -15,64 +207,67 @@ app.all('*', function(req, res, next) {
   res.header('Content-Type', 'application/json;charset=utf-8')
   next()
 })
+// 写入以太坊
+app.get('/writeToEthereum',function(req, res){
+  console.log('开始请求');
+  let params = urlModule.parse(req.url, true).query;//解析数据 获得Json对象
+  let order_id = parseInt(params.order_id);
+  let name = params.name;
+  let ctime = parseInt(params.ctime);
+  let phone = parseInt(params.phone);
+  let price = parseInt(params.price);
+  let lease_time = parseInt(params.lease_time);
+  let sign = params.sign;
 
-const contractAddress = "0x79670063052b240a2b4bc67fd4cbc72c08b6ddbb";
 
-// 开始写接口
-// 例：接口为/client/任意参数, 就爱那个数据插入database的clients.json中
-app.post('/writeToEthereum',function(req, res){
-  //引入web3模块
-  //初始化 web3
-  let web3 = new Web3(new Web3.providers.HttpProvider("http://127.0.0.1:8545"));
-  //输出初始化结果
-  console.log('Initialization web3 complete,the first account is '+ web3.eth.accounts[1]);
-  let fs = require('fs');
-  let code = fs.readFileSync('Voting.sol').toString();
-  let solc = require('solc');
-  //编译合约为ABI文件
-  let compiledCode = solc.compile(code);
+  var numbernon=  web3.eth.getTransactionCount(config.account) ;
+  var nonceHex = web3.toHex(numbernon);
+  var gasPrice = web3.eth.gasPrice;
+  var gasPriceHex = web3.toHex(gasPrice);
+  var gasLimitHex = web3.toHex(3000000);
 
-  console.log('Compile Voting.sol complete');
-  //部署合约至区块链节点
-  let abiDefinition = JSON.parse(compiledCode.contracts[':Voting'].interface);
-  //写入ABI文件至本地文件目录
-  fs.writeFile('Voting.json',JSON.stringify(abiDefinition), {}, function(err) {
-      console.log('write ABI file [Voting.json] complete . ');
-  });
 
-  let VotingContract = web3.eth.contract(abiDefinition);
-  let byteCode = compiledCode.contracts[':Voting'].bytecode;
-  //调用VotingContract对象的new()方法来将投票合约部署到区块链。new()方法参数列表应当与合约的 构造函数要求相一致。对于投票合约而言，new()方法的第一个参数是候选人名单。
-  console.log(web3.eth.accounts[0]);
-  let deployedContract = VotingContract.new(['Rama','Nick','Jose'],{data: byteCode, from: web3.eth.accounts[0], gas: 4700000});
-  //输出合约 地址，如果此处没有返回地址，可以在Ganache日志中查看到
-  console.log(deployedContract);
-  setTimeout(function(){
-    console.log('deploy complete,deploy address is '+ deployedContract.address);
-    let contractInstance = VotingContract.at(deployedContract.address);
-    // let contractInstance = VotingContract.at('0xb3e2957f9aa802a6287ef067e91d76eada7d6322');
-
-  console.log(contractInstance);
-    //测试合约调用
-    contractInstance.voteForCandidate('Rama', {from: web3.eth.accounts[0]});
-    contractInstance.voteForCandidate('Rama', {from: web3.eth.accounts[0]});
-    contractInstance.voteForCandidate('Nick', {from: web3.eth.accounts[0]});
-    contractInstance.voteForCandidate('Jose', {from: web3.eth.accounts[0]});
-    contractInstance.voteForCandidate('Jose', {from: web3.eth.accounts[0]});
-    console.log("--------------finish----------------");
-    let RamaVote=contractInstance.totalVotesFor.call('Rama');
-    let NickVote=contractInstance.totalVotesFor.call('Nick');
-    let JoseVote=contractInstance.totalVotesFor.call('Jose');
-    console.log("Rama's vote is "+RamaVote);
-    console.log("Nick's vote is "+NickVote);
-    console.log("Jose's vote is "+JoseVote);
-    res.status(200);
-    res.send()
-  },16000);
+  // 生成合约的签名信息
+  var rawTx = {
+      from: config.account,
+      nonce: nonceHex,
+      gasPrice: gasPriceHex,
+      gasLimit: gasLimitHex,
+      to: config.ContractAddress,
+      value: '0x00',
+      data: ContractInstance.writeOrder.getData(order_id, name, ctime, phone, price, lease_time, sign)
+  }
+  console.log(rawTx)
+  // 新建合约签名
+  var tx = new Tx(rawTx);
+  // 连接到钱包私钥地址
+  var privateKey = new Buffer(config.privateKey, 'hex');
+  tx.sign(privateKey);
+  var serializedTx = '0x' + tx.serialize().toString('hex');
+  // 发起交易
+  web3.eth.sendRawTransaction(serializedTx, function(err, hash) {
+    if (!err) {
+      console.log(hash);
+      res.status(200);
+      res.json(hash);
+    } else {
+      console.log(err);
+      res.status(404);
+      res.json(err);
+    }
+  })
 });
+// 读取以太坊数据，直接用 web.eth.call 的方法调用
+app.get('/readForEthereum',function(req, res){
+  let params = urlModule.parse(req.url, true).query;
+  let order_id = parseInt(params.order_id);
+  let result = ContractInstance.readOrder.call(order_id);
+  res.status(200);
+  res.json(result);
+})
 
 // 开启服务器
-const server = app.listen(3000, function() {
+const server = app.listen(3008, function() {
   var host = server.address().address
   var port = server.address().port
   console.log('server is listening at http://%s:%s', host, port)
