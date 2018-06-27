@@ -37,7 +37,8 @@
 
 ----------------------------------------------我是最后总结分界线-------------------------------------------------------
 
-在 Dapp 项目中搭建的简单 Dapp 已经够用了，奈何老板就是会折磨人，需求是后端直接调用我写的接口，在用户下单成功后直接将数据存入数据库，所以就有了这个，通过这么一搞，对以太坊又加深了一些印象，趁我刚搞完，赶紧写总结，要不下周忙别的又忘了。
+在 Dapp 项目中搭建的简单 Dapp 已经够用了，奈何老板就是会折磨人，需求是后端直接调用我写的接口，在用户下单成功后直接将数据存入数据库，所以就有了这个，
+通过这么一搞，对以太坊又加深了一些印象，趁我刚搞完，赶紧写总结，要不下周忙别的又忘了。
 
 先简单说一下我的踩坑历程，开始本着后端直接调用的目标，写接口，然后遇到一个问题，以往的 Dapp 都是前端调用，在网页上连接小狐狸钱包直接支付成功就好了的
 啊，但是我写接口的时候，死活找不到部署完合约的那个账户，而且我特么写的东西都是在 TestRpc 上的啊，关了服务啥都特么没了，苦恼了一天，最后特么的找到了原
@@ -63,8 +64,8 @@
     
 ### 2.在智能合约编辑器上部署智能合约。
 
-    不说了就，记住那个合约地址、合约函数的地址，合约函数的地址在 Compile，那里，点击 "Details",然后在一大堆里找吧就。对了，连同你的钱包的公钥和私钥
-    地址，这些都放在一个 config.js 文件里，有用...而且全部都是机密。
+不说了就，记住那个合约地址、合约函数的地址，合约函数的地址在 Compile，那里，点击 "Details",然后在一大堆里找吧就。对了，连同你的钱包的公钥和私钥
+地址，这些都放在一个 config.js 文件里，有用...而且全部都是机密。
     
 ### 3.编写 App.js 文件
 
@@ -125,15 +126,16 @@
       let lease_time = parseInt(params.lease_time);
       let sign = params.sign;
       // 处理 nonce
-      numbernon++;
+      numbernon++;// 每次调用签名合约的时候，就需要加 1，不加 1 会保错的，还是看上面的那篇文章
       console.log("Current nonce is ", numbernon);
 
-      // 处理签名合约的参数
+      // 处理签名合约的参数，这个当时也可愁了，记得还通宵了。。
       var nonceHex = web3.toHex(numbernon);
       var gasPrice = web3.eth.gasPrice;
       var gasPriceHex = web3.toHex(gasPrice);
       var gasLimitHex = web3.toHex(3000000);
 
+      // 写签名合约的内容
       var rawTx = {
           from: config.account,
           nonce: nonceHex,
@@ -141,22 +143,28 @@
           gasLimit: gasLimitHex,
           to: config.ContractAddress,
           value: '0x00',
-          data: ContractInstance.writeOrder.getData(order_id, name, ctime, phone, price, lease_time, sign)
+          data: ContractInstance.writeOrder.getData(order_id, name, ctime, phone, price, lease_time, sign)// 就这个地方又坑了我一天，膈应。
       }
       var tx = new Tx(rawTx);
+      // 签名钱包的私钥
       var privateKey = new Buffer(config.privateKey, 'hex');
       tx.sign(privateKey);
+      // 生成签约的 Hash
       var serializedTx = '0x' + tx.serialize().toString('hex');
+      // 发起签名交易
       web3.eth.sendRawTransaction(serializedTx, function(err, txHash) {
         console.log("The transaction Hash value is ", txHash);
         if (!err) {
+        // 为啥用定时器，是因为交易会有一段时间的 Pending，查看状态的时候回查不到。
           setTimeout(function(){
+          // 查看 交易的结果
             web3.eth.getTransactionReceipt(txHash, function(err, receipt) {
               if (err) {
                 res.status(200);
                 res.json({'transactionHash': txHash, 'msg': err, 'balance': null});
               }
               if (receipt) {
+              // 如果 status 为'0x1',那么证明为成功
                 if (receipt.status == '0x1') {
                   console.log('Write to success,The details are ' + "\n", receipt);
                   let balance = web3.eth.getBalance(receipt.from).toNumber();
@@ -177,6 +185,30 @@
         }
       })
     });
+    
+#### 然后读操作，不花费 gas，而且又有合约实例，所以直接调用，
+
+    // 读取以太坊数据
+    app.get('/readForEthereum',function(req, res){
+      let params = urlModule.parse(req.url, true).query;
+      let order_id = parseInt(params.order_id);
+      let result = ContractInstance.readOrder.call(order_id);
+      res.status(200);
+      res.json(result);
+    })
+
+#### 然后是服务监控的端口号：
+
+    // 开启服务器
+    const server = app.listen(3008, function() {
+      var host = server.address().address
+      var port = server.address().port
+      console.log('server is listening at http://%s:%s', host, port)
+    })
+    
+#### 小结
+
+    这么一看也特么不难，难的是没搞过吧。
     
 
     
