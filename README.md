@@ -143,7 +143,8 @@
           gasLimit: gasLimitHex,
           to: config.ContractAddress,
           value: '0x00',
-          data: ContractInstance.writeOrder.getData(order_id, name, ctime, phone, price, lease_time, sign)// 就这个地方又坑了我一天，膈应。
+          // 就这个地方又坑了我一天，膈应。
+          data: ContractInstance.writeOrder.getData(order_id, name, ctime, phone, price, lease_time, sign)
       }
       var tx = new Tx(rawTx);
       // 签名钱包的私钥
