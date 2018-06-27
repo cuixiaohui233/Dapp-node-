@@ -51,7 +51,8 @@
 数的参数，支付一定的 gas，等待交易成功，就可以查看数据了。这是一个合约测试的过程，甚至不需要前面说的开启 TestRPC,就可以直接测试。这破玩意，搞了老长
 时间了，丫的。
     
-接着，测试也测试成功了，那上线吧，但是以太坊部署到公链上，就需要连接公网的节点，但是连接节点，需要本地同步链上的所有的节点，工程大，占内存，费时间，一开始不知道啊，傻呵呵的又搞了好久，又整钱包，还整什么星火计划节点，都白扯啦，后来就连接远程节点，才连接上了主链，跳坑的时候离写这个文档的时候过去好几天了，其中踩坑的许多细节都忘了，感觉还不错，除了被老大催着难受以外，其他都还好。
+接着，测试也测试成功了，那上线吧，但是以太坊部署到公链上，就需要连接公网的节点，但是连接节点，需要本地同步链上的所有的节点，工程大，占内存，费时间一
+开始不知道啊，傻呵呵的又搞了好久，又整钱包，还整什么星火计划节点，都白扯啦，后来就连接远程节点，才连接上了主链，跳坑的时候离写这个文档的时候过去好几天了，其中踩坑的许多细节都忘了，感觉还不错，除了被老大催着难受以外，其他都还好。
 
 接下来，赶紧记录一下最重要的部分，就是如何通过 infura 部署项目至公链上。这一部分要写详细一点：
 
@@ -65,16 +66,16 @@
     
 ### 3.编写 App.js 文件
 
-    如上面的 app.js,累个半死搞出这么个玩意。
+如上面的 app.js,累个半死搞出这么个玩意。
     
-    #### 首先，先引入各种依赖：
+#### 首先，先引入各种依赖：
     
     const express = require('express');// Node 写接口的
     const Web3 = require('web3');// 使用 Web3 调用以太坊的 RPC
     const urlModule = require('url');// 处理 Url
     var Tx = require('ethereumjs-tx');// 签名合约的时候要用
     
-    #### 然后创造 Web3 实例:
+#### 然后创造 Web3 实例:
     
     if (typeof web3 !== 'undefined') {
       console.log('instance already exists');
@@ -85,16 +86,16 @@
       web3 = new Web3(new Web3.providers.HttpProvider("https://rinkeby.infura.io/" + config.key));
     }
     
-    #### 获取合约实例
+#### 获取合约实例
     
     var ContractInstance =  web3.eth.contract(ContractABI).at(config.ContractAddress);
     
-    #### 获取钱包账户的 nonce,这个尤其重要，参见(教程)[https://blog.csdn.net/wo541075754/article/details/79054937]
+#### 获取钱包账户的 nonce,这个尤其重要，参见(教程)[https://blog.csdn.net/wo541075754/article/details/79054937]
     
     var numbernon= web3.eth.getTransactionCount(config.account, 'latest');
     numbernon--;// 如果你看了上面的文章，你就知道我为啥这么做。
     
-    #### 接着设置接口的跨域了啥的：
+#### 接着设置接口的跨域了啥的：
     
     const app = express();
     // 设置跨域访问
@@ -106,6 +107,74 @@
       res.header('Content-Type', 'application/json;charset=utf-8')
       next();
     })
+    
+#### 接着到了重头戏，写操作：
+
+    // 写入以太坊
+    app.get('/writeToEthereum',function(req, res){
+      console.log('Start asking for data');
+      // 处理参数
+      let params = urlModule.parse(req.url, true).query;//解析数据 获得Json对象
+      let order_id = parseInt(params.order_id);
+      let name = params.name;
+      let ctime = parseInt(params.ctime);
+      let phone = parseInt(params.phone);
+      let price = parseInt(params.price);
+      let lease_time = parseInt(params.lease_time);
+      let sign = params.sign;
+      // 处理 nonce
+      numbernon++;
+      console.log("Current nonce is ", numbernon);
+
+      // 处理签名合约的参数
+      var nonceHex = web3.toHex(numbernon);
+      var gasPrice = web3.eth.gasPrice;
+      var gasPriceHex = web3.toHex(gasPrice);
+      var gasLimitHex = web3.toHex(3000000);
+
+      var rawTx = {
+          from: config.account,
+          nonce: nonceHex,
+          gasPrice: gasPriceHex,
+          gasLimit: gasLimitHex,
+          to: config.ContractAddress,
+          value: '0x00',
+          data: ContractInstance.writeOrder.getData(order_id, name, ctime, phone, price, lease_time, sign)
+      }
+      var tx = new Tx(rawTx);
+      var privateKey = new Buffer(config.privateKey, 'hex');
+      tx.sign(privateKey);
+      var serializedTx = '0x' + tx.serialize().toString('hex');
+      web3.eth.sendRawTransaction(serializedTx, function(err, txHash) {
+        console.log("The transaction Hash value is ", txHash);
+        if (!err) {
+          setTimeout(function(){
+            web3.eth.getTransactionReceipt(txHash, function(err, receipt) {
+              if (err) {
+                res.status(200);
+                res.json({'transactionHash': txHash, 'msg': err, 'balance': null});
+              }
+              if (receipt) {
+                if (receipt.status == '0x1') {
+                  console.log('Write to success,The details are ' + "\n", receipt);
+                  let balance = web3.eth.getBalance(receipt.from).toNumber();
+                  res.status(200);
+                  res.json({'transactionHash': txHash, 'msg': 'Success', 'balance': balance});
+                } else {
+                  console.log('Write to Fail,The details are ', receipt);
+                  res.status(400);
+                  res.json({'transactionHash': txHash, 'msg': 'Fail', 'balance': balance});
+                }
+              }
+            });
+          },60000);
+        } else {
+          console.log(err);
+          res.status(400);
+          res.json({'transactionHash': null, 'msg': 'Fail', 'balance': null});
+        }
+      })
+    });
     
 
     
